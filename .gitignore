@@ -2,7 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+CLIP/
+annotations/
+train2017/
+models/
+val2017/
 # C extensions
 *.so
 
