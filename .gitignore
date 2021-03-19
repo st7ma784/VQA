@@ -7,4 +7,5 @@ train2017/*
 models/*
 val2017/*
 # C extensions
-
+*.pkl
+*.zip
