@@ -2,6 +2,7 @@
 __pycache__/
 data/
 runs/
+models/
 annotations/*
 train2017/*
 models/*
