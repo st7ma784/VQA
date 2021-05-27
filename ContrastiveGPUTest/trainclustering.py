@@ -10,13 +10,19 @@ import os
 import sys
 import pickle
 from tqdm import tqdm 
-#from torchnlp.samplers.noisy_sorted_batch_sampler import NoisySortedBatchSampler
 
 PACKAGE_PARENT = '..'
 SCRIPT_DIR = os.path.dirname(os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__))))
 sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
+sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT,"CLIP")))
 
+#from torchnlp.samplers.noisy_sorted_batch_sampler import NoisySortedBatchSampler
+#sdir=os.path.dirname(os.path.realpath(os.path.join(os.getcwd(),".." )))
+# clip_dir =os.path.realpath(os.path.join("..","..","CLIP"))
+# print(f"CLIP dir is: {clip_dir.absolute}")
+# sys.path.append(str(clip_dir))
 
+import clip
 from samplers.mySampler import NoisySortedBatchSampler,SortedSampler,getSortedSampler
 
 from sklearn.cluster import MiniBatchKMeans
@@ -25,10 +31,6 @@ from torch.autograd import Variable
 from utils import AverageMeter,categorisor
 from utils import box_cxcywh_to_xyxy,rescale_bboxes,getArea
 
-clip_dir = "CLIP"
-sys.path.append(str(clip_dir))
-print(f"CLIP dir is: {clip_dir}")
-import clip
 from model import convert_weights
 from datasets.captionloader import mybothCocoCaptions
 from datasets.captionloader import myCocoCaptions
@@ -49,9 +51,8 @@ transform = T.Compose([
                 T.Resize(224),
                 T.CenterCrop(224),
                 ]),
-dataDir='.'
-dataType='train2017'
-annFile='{}/annotations/captions_{}.json'.format(dataDir,dataType)
+dataDir='data'
+folders=['train2017','train2014']
 
 def train(model, optimizer, train_loader, device, scheduler=None,):
     model.to(device).train()
@@ -84,39 +85,46 @@ def train(model, optimizer, train_loader, device, scheduler=None,):
         tk0.set_postfix(loss=summary_loss.avg)
     return summary_loss.avg
 
-def train_fn(data_loader,net,epochs=10, lr=0.005):
+def train_fn(data_loaders,net,epochs=10, lr=0.005):
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
     print('The number of parameters of model is', num_params)
     optimizer = torch.optim.Adam([p for p in net.parameters() if p.requires_grad], lr=lr, eps= 1e-2)
     for e in range(epochs): 
-        loss=train(net, optimizer, data_loader, device)
-        #print(loss)
-        #save model here. 
-        if e%10==0:
-            torch.save(net.state_dict(), "./models/model{}epoch{}.pt".format("VitContrastive",e))
-
-dataset4sort=myCocoCaptions(root = os.path.join(dataDir,dataType),
+        for loader in data_loaders:
+            loss=train(net, optimizer, loader, device)
+            #print(loss)
+            #save model here. 
+        if (e+1)%10 ==0:
+            torch.save(net.state_dict(), "./data/models/model{}epoch{}.pt".format("VitContrastive2",e))
+def getDataloaders(folders,model):
+    dataloaders=[]
+    for folder in folders:
+        dataType=folder#'train2017'
+        annFile='{}/annotations/captions_{}.json'.format(dataDir,dataType)
+        dataset4sort=myCocoCaptions(root = os.path.join(dataDir,dataType),
                                 annFile = annFile,
                                 context_length=model.context_length,
                                 )
-
-train_sampler2=getSortedSampler(dataset4sort,model,device,B)
-dataset=mybothCocoCaptions(root = os.path.join(dataDir,dataType),
-                            annFile = annFile,
-                            context_length=model.context_length,
-                            )
-data_loader = torch.utils.data.DataLoader(dataset,
+        train_sampler2=getSortedSampler(dataset4sort,model.encode_text,device,B)
+        dataset=mybothCocoCaptions(root = os.path.join(dataDir,dataType),
+                                    annFile = annFile,
+                                    context_length=model.context_length,
+                                )
+        dataloaders.append(torch.utils.data.DataLoader(dataset,
                                           #batch_size=350, 
                                           num_workers=4,
                                           #shuffle=True,
                                           #sampler=train_sampler,
                                           batch_sampler=train_sampler2,
-                                          #prefetch_factor=2,
+                                          prefetch_factor=3,
                                           #drop_last=True,
-                                          pin_memory=True)
+                                          pin_memory=True,
+                                          )
+                            )
+    return dataloaders
 #print("here,  consider saving depending on how long this takes? ")
 LR=0.00005
-
-train_fn(data_loader,model,epochs=100,lr=LR)
+data_loaders=getDataloaders(folders,model)
+train_fn(data_loaders,model,epochs=100,lr=LR)
 

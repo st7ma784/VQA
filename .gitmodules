@@ -1,0 +1,6 @@
+[submodule "CLIP"]
+	path = CLIP
+	url = https://github.com/openai/CLIP.git
+[submodule "VQA"]
+	path = VQA
+	url = https://github.com/GT-Vision-Lab/VQA.git

@@ -2,7 +2,6 @@
 __pycache__/
 data/
 runs/
-CLIP/
 annotations/*
 train2017/*
 models/*
@@ -10,3 +9,4 @@ val2017/*
 # C extensions
 *.pkl
 *.zip
+*.pt

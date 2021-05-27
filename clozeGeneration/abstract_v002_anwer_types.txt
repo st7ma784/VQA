@@ -1,0 +1,80 @@
+<|ans|> <|rest|>
+The <|rest|> is <|ans|> 
+the <|rest|> is <|ans|>
+the <|rest|> is <|ans|> 
+<|ans|> <|rest|>
+<|ans|> is <|rest|> 
+the <|ans|> are <|rest|>
+The <|ans|> is <|rest|>
+there is <|ans|> a <|rest|>
+the <|ans|> does <|rest|>
+the woman is <|ans|> <|rest|>
+the man is <|ans|> <|rest|>
+<|ans|> is on the <|rest|>
+it is <|ans|> <|rest|>
+the girl is <|ans|> <|rest|>
+the boy is <|ans|> <|rest|>
+ the dog is <|ans|> <|rest|>
+they are <|ans|> <|rest|>
+<|ans|> is <|rest|>
+they are <|ans|>
+the <|rest|> are the color <|ans|>
+The <|ans|> is in the
+the man is <|ans|> <|rest|>
+There are <|ans|> <|rest|>
+the woman is <|ans|> <|rest|>
+the <|ans|> are <|rest|>
+the boy is <|ans|> <|rest|>
+There are <|ans|> <|rest|>
+the girl is <|ans|> <|rest|>
+this is <|ans|> <|rest|>
+how
+which
+there are <|ans|> people <|rest|> 
+ the cat is <|ans|> <|rest|>
+why is the 
+are
+will the
+what type of
+the dog is <|ans|> <|rest|>
+do
+she is <|ans|> <|rest|>
+does
+do the 
+is
+the baby  is <|ans|> <|rest|>
+there is <|ans|> <|rest|>
+the lady  is <|ans|> <|rest|>
+can
+a <|ans|> is <|rest|>
+the <|ans|> are []
+the sun is <|ans|> <|rest|>
+what are they
+did the
+the cat is <|ans|> <|rest|>
+the lady is <|ans|> <|rest|>
+there are <|ans|> clouds <|rest|>
+that is <|ans|> <|rest|>
+the little girl is <|ans|> <|rest|>
+he  is <|ans|> <|rest|>
+these are <|ans|> <|rest|>
+there are <|ans|> trees <|rest|> 
+there are <|ans|> pillows <|rest|>
+the people are <|ans|> <|rest|>
+why
+is the young
+there are <|ans|> windows <|rest|>
+this  is <|ans|> a <|rest|>
+the little <|rest|> is a <|ans|>
+the tv is <|ans|> <|rest|>
+There are <|ans|> animals <|rest|>
+who
+There are <|ans|> pictures <|rest|>
+There are <|ans|> plants <|rest|>
+There are <|ans|> birds <|rest|>
+The <|rest|> is <|ans|> 
+the baby is <|ans|> <|rest|>
+is anyone 
+what color
+There are <|ans|> bushes <|rest|>
+the old man is <|ans|> <|rest|>

@@ -57,6 +57,7 @@ rm -f v2_Complementary_Pairs_Val_mscoco.zip
 end = 'date + %s'
 runtime = $((end - start))
 
-git clone https://github.com/openai/CLIP.git
-echo "Download completed in " $runtime  " second"
 
+# git clone https://github.com/openai/CLIP.git
+# git clone https://github.com/GT-Vision-Lab/VQA.git
+echo "Download completed in " $runtime  " second"
