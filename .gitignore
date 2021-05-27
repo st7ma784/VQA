@@ -1,7 +1,8 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-
-CLIP/*
+data/
+runs/
+CLIP/
 annotations/*
 train2017/*
 models/*
