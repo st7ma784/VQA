@@ -411,17 +411,17 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
     for i in range(n_iters):
         summary_loss = AverageMeter()
         data=tqdm(data_loader)
-        for images,Q,QA,A,QID, in data:
-            img_grid = torchvision.utils.make_grid(images)
-            writer.add_image('batch_images', img_grid)
+        for k,(images,Q,QA,A,QID) in enumerate(data):
+            #img_grid = torchvision.utils.make_grid(images)
+            #writer.add_image('batch_images', img_grid)
             image_input=images.cuda()
             Q=Q.cuda()#to(device,non_blocking=True)#Bx77
             #QA=QA.cuda()#to(device,non_blocking=True)#Bx77
             GTAnswers=A.cuda()
-
+            
             # _,startindexes=torch.max(Q==0,dim=1)#B
             # startindexes[startindexes<=0]=0
-            writer.add_graph(LSTM, (image_input,Q.T))
+            #writer.add_graph(LSTM.cuda(), (image_input.cuda(),Q.T.cuda()))
             output=LSTM(image_input,Q.T)#.permute(1,0,2)#[77, B, 49408]) to B,77,V
             # print(output.size())
             # print(GTAnswers.size())
@@ -433,15 +433,15 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             #         print(startindexes[j])
 
             loss=criterion(output.permute(1,2,0),GTAnswers)
-            print(loss.item())
+            #print(loss.item())
             loss.backward()
             torch.nn.utils.clip_grad_norm_([p for p in LSTM.parameters() if p.requires_grad], max_norm=1.0)
             optimizer.step()
             summary_loss.update(loss.item())
-            writer.add_scalar('training loss',loss, i * len(trainloader))
+            writer.add_scalar('training loss',loss, (i * len(data))+k)
             data.set_postfix(AVGloss=summary_loss.avg,loss=loss.item())
         scheduler.step()
-        torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv6e{}.pt".format(i))
+        torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv7e{}.pt".format(i))
     writer.flush()
 
     writer.close()
@@ -453,7 +453,9 @@ class psCLIPLSTM(CLIPLSTM):
         super().__init__(clip,dropout_p=dropout_p,max_length=35,teacher_forcing_ratio=teacher_forcing_ratio)
         self.lstm=nn.LSTM(input_size=1,hidden_size=self.hidden_size,bidirectional=True)
         #self.positional_embedding=nn.Parameter(clip.positional_embedding.unsqueeze(1))
-        self.final=nn.Linear(2*self.hidden_size,self.hidden_size)
+        self.final=nn.Linear(2*self.hidden_size,self.output_size)
+        self.norm = nn.LayerNorm(self.hidden_size)
+        self.softm= nn.LogSoftmax(dim=-1) #1
     def forward(self, image_tensor, QTensor): # 
         Batch= image_tensor.size(0)
         encoder_output = self.clip.encode_image(image_tensor).float()
@@ -472,22 +474,21 @@ class psCLIPLSTM(CLIPLSTM):
         #print(hidden[0].size())
         out,(h,c)=self.lstm(QTensor.unsqueeze(-1).float(),(hidden,hidout))
         out=self.final(out[:35])
-        torch.nn.functional.relu(out, inplace=True)
-
-        return out
+        out=self.softm(out)#torch.nn.functional.relu(out, inplace=True)
+        return out#self.norm(out)
 
 if __name__ == '__main__':
-    try:    
-        model, preprocess = CLIP.load("ViT-B/32", device=device, jit=True)
-        input_resolution = model.input_resolution.item()
-        context_length = model.context_length.item()
-        vocab_size = model.vocab_size.item()
-        print("Model parameters:", f"{np.sum([int(np.prod(p.shape)) for p in model.parameters()]):,}")
-        print("Input resolution:", input_resolution)
-        print("Context length:", context_length)
-        print("Vocab size:", vocab_size)
-    except:
-        print("Failed JitLoad")
+        
+    model, preprocess = CLIP.load("ViT-B/32", device=device, jit=True)
+    input_resolution = model.input_resolution.item()
+    context_length = model.context_length.item()
+    vocab_size = model.vocab_size.item()
+    print("Model parameters:", f"{np.sum([int(np.prod(p.shape)) for p in model.parameters()]):,}")
+    print("Input resolution:", input_resolution)
+    print("Context length:", context_length)
+    print("Vocab size:", vocab_size)
+
+    #print("Failed JitLoad")
     model, _ = CLIP.load("ViT-B/32", device=device, jit=False)
 
     # %ls
@@ -515,11 +516,15 @@ if __name__ == '__main__':
 
     #data=myVQALoader(vqa, model, tokenizer, preprocess)
     torch.autograd.set_detect_anomaly(True)
-    Batchsize=40
+    Batchsize=140
     tokenizer= SimpleTokenizer()
     writer = SummaryWriter('runs/LSTM_experiment_1')
-    LSTM= psCLIPLSTM(model).cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
+    LSTM= psCLIPLSTM(model).float().cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
     LSTM.device=device
+    #model.apply(patch_device)
+    #LSTM.apply(patch_device)
+    #patch_device(LSTM)
+    #patch_device(model)
     training=True
     if training: 
         data=myVQALSTM(VQA(annotation_file=annFile,question_file= quesFile), model, tokenizer, preprocess)
@@ -531,8 +536,8 @@ if __name__ == '__main__':
                                             drop_last=False,
                                             pin_memory=True,
                                 )
-        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.001,eps= 1e-3)
-        train(LSTM,dataloader, 10,optimizer) 
+        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.0001,eps= 1e-3)
+        train(LSTM,dataloader, 100,optimizer) 
         torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv6e7.pt")
 
     device_holder = torch.jit.trace(lambda: torch.ones([]).to(torch.device(device)), example_inputs=[])
