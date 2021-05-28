@@ -12,14 +12,14 @@ PACKAGE_PARENT = '..'
 SCRIPT_DIR = os.path.dirname(os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__))))
 sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
 sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT,"CLIP")))
-from CLIP.simple_tokenizer import SimpleTokenizer
+from CLIP.clip.simple_tokenizer import SimpleTokenizer
 import time
 import math
 import difflib
 from itertools import chain
 from multiprocessing import Pool 
 from functools import partial
-from ucrel_api.api import UCREL_API
+#from ucrel_api.api import UCREL_API
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from pathos.multiprocessing import ProcessingPool 
