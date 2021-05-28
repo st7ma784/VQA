@@ -385,7 +385,8 @@ class CLIPLSTM(nn.Module):
     def __init__(self,clip,dropout_p=0.1,max_length=77,teacher_forcing_ratio=0.5):   
 
         super().__init__()
-        self.embedding = nn.Embedding(clip.embed_dim, clip.embed_dim)
+        self.embed_dim=clip.visual.output_dim
+        self.embedding = nn.Embedding(self.embed_dim, self.embed_dim)
         Pretrained=clip.state_dict()["token_embedding.weight"]
         #dditionalsymbols=nn.Embedding(2,model.embed_dim).to(device)
         #pretrained=torch.cat((Pretrained,additionalsymbols.weight))        
@@ -399,11 +400,11 @@ class CLIPLSTM(nn.Module):
         self.device=device
         self.decoder=LSTMAttnDecoderRNN(
            embedding=self.embedding,
-           hidden_size=clip.embed_dim,
+           hidden_size=self.embed_dim,
            output_size=Pretrained.size(0),
         )
         self.target_length=35
-        self.hidden_size=clip.embed_dim
+        self.hidden_size=self.embed_dim
         self.output_size=Pretrained.size(0)
         self.teacher_forcing_ratio=0.5
         self.padValue=0
@@ -491,7 +492,7 @@ class psCLIPLSTM(CLIPLSTM):
     def __init__(self,clip,dropout_p=0.1,max_length=77,teacher_forcing_ratio=0.5,Batch=100):   
 
         super().__init__(clip,dropout_p=dropout_p,max_length=max_length,teacher_forcing_ratio=teacher_forcing_ratio)
-        self.lstm=nn.lstm(input_size=Batch,hidden_size=self.hidden_size,num_layers=1,bidirectional=True)
+        self.lstm=torch.nn.LSTM(input_size=Batch,hidden_size=self.hidden_size,num_layers=1,bidirectional=True)
         #self.Pos_combine = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, image_tensor, QTensor,GTQA_tensor): 

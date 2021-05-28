@@ -1,19 +1,3 @@
-# with open('testCLIPLSTMRESv5e6.json','r') as f:
-#                 #print(lis)
-    
-#     new=list({"question_id":key, "answer":val} for k in list(json.loads(f.read())) for key, val in k.items())
-#     json.dump(new,  open("testv5.json",  'w'))
-
-# !conda install tensorboard -y
-
-
-# !pip install spacy
-# !pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.0/en_core_web_sm-2.2.0.tar.gz
-#import spacy
-#import en_core_web_sm
-#nlp = en_core_web_sm.load()
-# !python -m spacy download en_core_web_sm
-#nlp=spacy.load("en_core_web_sm")   
 
 import json
 import datetime
@@ -28,6 +12,7 @@ import torch
 from torch import optim
 import numpy as np
 import torch.nn.functional as F
+import torchvision
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 PACKAGE_PARENT = '..'
 SCRIPT_DIR = "."
@@ -65,6 +50,22 @@ def patch_device(module):
                 node.copyAttributes(device_node)
 
 from torch.utils.tensorboard import SummaryWriter
+# with open('testCLIPLSTMRESv5e6.json','r') as f:
+#                 #print(lis)
+    
+#     new=list({"question_id":key, "answer":val} for k in list(json.loads(f.read())) for key, val in k.items())
+#     json.dump(new,  open("testv5.json",  'w'))
+
+# !conda install tensorboard -y
+
+
+# !pip install spacy
+# !pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-2.2.0/en_core_web_sm-2.2.0.tar.gz
+#import spacy
+#import en_core_web_sm
+#nlp = en_core_web_sm.load()
+# !python -m spacy download en_core_web_sm
+#nlp=spacy.load("en_core_web_sm")   
 
 
 def convertQA(vqa,question_id,ans):
@@ -327,6 +328,9 @@ class myVQALSTM():
                     ans=list(ans["answer"] for ans in self.vqa.qa[qid]['answers'])
                     self.candidateslist.update({qid:max(set(ans),key=ans.count)})
             self.train=train
+            print("dataset len  {}".format(len(self)))
+    def __len__(self):
+        return len(self.qids)
     def loadIMG(self,imgFilename):
         return self.preprocess(Image.open(os.path.join(data_dir, imgFilename)).convert("RGB"))
     def getFilename(self,qid,):
@@ -354,8 +358,7 @@ class myVQALSTM():
             QA[:min(35,len(qatokens))] = torch.tensor(qatokens)[:min(35,len(qatokens))]
             
         return Q,QA,A
-    def __len__(self):
-        return len(self.qids)
+
     def __getitem__(self, index: int):
         qid=self.qids[index]
         filename=self.getFilename(qid)
@@ -413,21 +416,24 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             writer.add_image('batch_images', img_grid)
             image_input=images.cuda()
             Q=Q.cuda()#to(device,non_blocking=True)#Bx77
-            QA=QA.cuda()#to(device,non_blocking=True)#Bx77
-            _,startindexes=torch.max(Q==0,dim=1)#B
-            startindexes[startindexes<=0]=0
-            writer.add_graph(LSTM, image_input,Q.T,QA.T)
-            outputs=LSTM(image_input,Q.T,QA.T)[:35]#.permute(1,0,2)#[77, B, 49408]) to B,77,V
-            GTAnswers=A.to(device,non_blocking=True)
-            for j in range(startindexes.size(0)):
-                try:
-                    indexs=torch.arange(startindexes[j],outputs.size(0)).cuda()
-                    outputs[:,j]=F.pad(torch.index_select(outputs[:,j],0,indexs.long()),(0,0,0,startindexes[j]))
-                except:
-                    print(startindexes[j])
+            #QA=QA.cuda()#to(device,non_blocking=True)#Bx77
+            GTAnswers=A.cuda()
 
-            loss=criterion(outputs.permute(1,2,0),GTAnswers)
-         
+            # _,startindexes=torch.max(Q==0,dim=1)#B
+            # startindexes[startindexes<=0]=0
+            writer.add_graph(LSTM, (image_input,Q.T))
+            output=LSTM(image_input,Q.T)#.permute(1,0,2)#[77, B, 49408]) to B,77,V
+            # print(output.size())
+            # print(GTAnswers.size())
+            # for j in range(startindexes.size(0)):
+            #     try:
+            #         indexs=torch.arange(startindexes[j],outputs.size(0)).cuda()
+            #         outputs[:,j]=F.pad(torch.index_select(outputs[:,j],0,indexs.long()),(0,0,0,startindexes[j]))
+            #     except:
+            #         print(startindexes[j])
+
+            loss=criterion(output.permute(1,2,0),GTAnswers)
+            print(loss.item())
             loss.backward()
             torch.nn.utils.clip_grad_norm_([p for p in LSTM.parameters() if p.requires_grad], max_norm=1.0)
             optimizer.step()
@@ -442,39 +448,55 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
 
 
 class psCLIPLSTM(CLIPLSTM):
-    def __init__(self,clip,dropout_p=0.1,max_length=77,teacher_forcing_ratio=0.5,Batch=100):   
+    def __init__(self,clip,dropout_p=0.1,max_length=35,teacher_forcing_ratio=0.5,Batch=100):   
 
-        super().__init__(clip,dropout_p=dropout_p,max_length=max_length,teacher_forcing_ratio=teacher_forcing_ratio)
-        self.lstm=nn.lstm(input_size=Batch,hidden_size=self.hidden_size,num_layers=1,bidirectional=True)
-    def forward(self, image_tensor, QTensor,GTQA_tensor): # 
+        super().__init__(clip,dropout_p=dropout_p,max_length=35,teacher_forcing_ratio=teacher_forcing_ratio)
+        self.lstm=nn.LSTM(input_size=1,hidden_size=self.hidden_size,bidirectional=True)
+        #self.positional_embedding=nn.Parameter(clip.positional_embedding.unsqueeze(1))
+        self.final=nn.Linear(2*self.hidden_size,self.hidden_size)
+    def forward(self, image_tensor, QTensor): # 
         Batch= image_tensor.size(0)
         encoder_output = self.clip.encode_image(image_tensor).float()
         encoder_output = encoder_output / encoder_output.norm(dim=-1, keepdim=True)
         encoder_hidden = self.clip.encode_text(QTensor.T).float()
         encoder_hidden = encoder_hidden / encoder_hidden.norm(dim=-1, keepdim=True)
         #decoder_input=QTensor[0] #symbols B
-        encoder_hidden=self.clip.positional_embedding+encoder_hidden
-        encoder_output=self.clip.positional_embedding+encoder_output
+        #print(encoder_hidden.size()) #[Bx512]
+        #print(self.positional_embedding.repeat(1,Batch,1).size()) #[77xBx512]
+        #encoder_hidden=self.positional_embedding.repeat(1,Batch,1)+encoder_hidden
+        #encoder_output=self.positional_embedding.repeat(1,Batch,1)+encoder_output
+        #print(QTensor.unsqueeze(-1).size())# (seq_len, batch, input_size)
+        hidden=torch.stack((encoder_hidden,encoder_hidden),dim=0).float()#(torch.stack((encoder_hidden.float(),encoder_output),dim=1),encoder_output))#[77x2xBx512]
+        hidout=torch.stack((encoder_output,encoder_output),dim=0).float()
+        #print(hidden.size())
+        #print(hidden[0].size())
+        out,(h,c)=self.lstm(QTensor.unsqueeze(-1).float(),(hidden,hidout))
+        out=self.final(out[:35])
+        torch.nn.functional.relu(out, inplace=True)
 
-        return self.lstm(QTensor[0],(encoder_hidden.float(),encoder_output))
+        return out
 
 if __name__ == '__main__':
-        
-    model, preprocess = CLIP.load("ViT-B/32", device=device, jit=False)
-    input_resolution = model.input_resolution.item()
-    context_length = model.context_length.item()
-    vocab_size = model.vocab_size.item()
-    print("Model parameters:", f"{np.sum([int(np.prod(p.shape)) for p in model.parameters()]):,}")
-    print("Input resolution:", input_resolution)
-    print("Context length:", context_length)
-    print("Vocab size:", vocab_size)
+    try:    
+        model, preprocess = CLIP.load("ViT-B/32", device=device, jit=True)
+        input_resolution = model.input_resolution.item()
+        context_length = model.context_length.item()
+        vocab_size = model.vocab_size.item()
+        print("Model parameters:", f"{np.sum([int(np.prod(p.shape)) for p in model.parameters()]):,}")
+        print("Input resolution:", input_resolution)
+        print("Context length:", context_length)
+        print("Vocab size:", vocab_size)
+    except:
+        print("Failed JitLoad")
+    model, _ = CLIP.load("ViT-B/32", device=device, jit=False)
+
     # %ls
     # +
     dataDir		='./data'#'../../VQA'
     versionType ='v2_' # this should be '' when using VQA v2.0 dataset
     taskType    ='OpenEnded' # 'OpenEnded' only for v2.0. 'OpenEnded' or 'MultipleChoice' for v1.0
     dataType    ='mscoco'  # 'mscoco' only for v1.0. 'mscoco' for real and 'abstract_v002' for abstract for v1.0.
-    dataSubType ='test2015'
+    dataSubType ='train2014'
     annFile     ='%s/%s%s_%s_annotations.json'%(dataDir, versionType, dataType, dataSubType)
     quesFile    ='%s/%s%s_%s_%s_questions.json'%(dataDir, versionType, taskType, dataType, dataSubType)
     imgDir 		= '%s/%s/' %(dataDir, dataSubType)
@@ -488,20 +510,19 @@ if __name__ == '__main__':
     #vqa=VQA(annotation_file=None,question_file= quesFile)
     
     modelDir="./data/models/"
-    #model, _ = CLIP.load("ViT-B/32", device=device, jit=False)
     model.load_state_dict(torch.load(os.path.join(modelDir,"modelVitUpdatingContrastive2epoch59.pt")))
-    model.cuda().eval()
+    model.cuda()
 
     #data=myVQALoader(vqa, model, tokenizer, preprocess)
     torch.autograd.set_detect_anomaly(True)
-    Batchsize=20
+    Batchsize=40
     tokenizer= SimpleTokenizer()
     writer = SummaryWriter('runs/LSTM_experiment_1')
     LSTM= psCLIPLSTM(model).cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
     LSTM.device=device
-    train=True
-    if train: 
-        data=myVQALSTM(vqa, model, tokenizer, preprocess)
+    training=True
+    if training: 
+        data=myVQALSTM(VQA(annotation_file=annFile,question_file= quesFile), model, tokenizer, preprocess)
         dataloader=torch.utils.data.DataLoader(data,
                                             batch_size=Batchsize, 
                                             num_workers=6,
