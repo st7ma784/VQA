@@ -492,6 +492,8 @@ class psCLIPLSTM(CLIPLSTM):
 
         super().__init__(clip,dropout_p=dropout_p,max_length=max_length,teacher_forcing_ratio=teacher_forcing_ratio)
         self.lstm=nn.lstm(input_size=Batch,hidden_size=self.hidden_size,num_layers=1,bidirectional=True)
+        #self.Pos_combine = nn.Linear(hidden_size * 2, hidden_size)
+
     def forward(self, image_tensor, QTensor,GTQA_tensor): 
         Batch= image_tensor.size(0)
         encoder_output = self.clip.encode_image(image_tensor).float()
@@ -499,7 +501,8 @@ class psCLIPLSTM(CLIPLSTM):
         encoder_hidden = self.clip.encode_text(QTensor.T).float()
         encoder_hidden = encoder_hidden / encoder_hidden.norm(dim=-1, keepdim=True)
         #decoder_input=QTensor[0] #symbols B
-
+        encoder_hidden=self.clip.positional_embedding +encoder_hidden
+        encoder_output=self.clip.positional_embedding+encoder_output
         return self.lstm(QTensor[0],(encoder_hidden.float(),encoder_output))
         decoder_hidden = encoder_hidden.float() #B,512
         use_teacher_forcing = True if random.random() < self.teacher_forcing_ratio else False
