@@ -376,26 +376,26 @@ def createdict(i,I=[],QID=[],tokenizer=[]):
 
 def createRESFile(LSTM,VQA,resLocation):
     results=[]
-    Batchsize=300
+    Batchsize=900
     data=myVQALSTM(VQA, model, tokenizer, preprocess,train=False)
     dataloader=torch.utils.data.DataLoader(data,
                                           batch_size=Batchsize, 
-                                          num_workers=8,
-                                          shuffle=False,
+                                          num_workers=4,
+                                          shuffle=True,
                                           prefetch_factor=2,
                                           drop_last=False,
                                           pin_memory=True,
                                )
     data=tqdm(dataloader)
     with torch.no_grad():
-        for images,Q,QA,A,QID in data:
+        for images,Q,_,_,QID in data:
             image_input=images.cuda()
             Q=Q.cuda()#to(device,non_blocking=True)#Bx77
             _,startindexes=torch.max(Q==0,dim=1)#B
             startindexes[startindexes<=0]=0
-            outputs=LSTM(image_input,Q.T,torch.zeros(Q.T.size()))#.permute(1,0,2)#[77, B, 49408]) to B,77,V
+            outputs=LSTM(image_input,Q.T)#,torch.zeros(Q.T.size()))#.permute(1,0,2)#[77, B, 49408]) to B,77,V
             #make_dot(LSTM(image_input,Q.T,torch.zeros(Q.T.size())), params=dict(list(LSTM.named_parameters())),  show_attrs=True, show_saved=True)
-            del Q,QA,image_input
+            #del Q,image_input
             _,I=torch.max(outputs,dim=-1)
             part=partial(createdict, I=I.cpu(),QID=QID.cpu(),tokenizer=tokenizer)
             with Pool(20) as P:
@@ -417,7 +417,7 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             image_input=images.cuda()
             Q=Q.cuda()#to(device,non_blocking=True)#Bx77
             #QA=QA.cuda()#to(device,non_blocking=True)#Bx77
-            GTAnswers=A.cuda()
+            
             
             # _,startindexes=torch.max(Q==0,dim=1)#B
             # startindexes[startindexes<=0]=0
@@ -431,8 +431,8 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             #         outputs[:,j]=F.pad(torch.index_select(outputs[:,j],0,indexs.long()),(0,0,0,startindexes[j]))
             #     except:
             #         print(startindexes[j])
-
-            loss=criterion(output.permute(1,2,0),GTAnswers)
+            
+            loss=criterion(output.permute(1,2,0),A.cuda())
             #print(loss.item())
             loss.backward()
             torch.nn.utils.clip_grad_norm_([p for p in LSTM.parameters() if p.requires_grad], max_norm=1.0)
@@ -441,11 +441,12 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             writer.add_scalar('training loss',loss, (i * len(data))+k)
             data.set_postfix(AVGloss=summary_loss.avg,loss=loss.item())
         scheduler.step()
-        torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv7e{}.pt".format(i))
-    writer.flush()
+        name="./data/models/CLOZELSTMs/CLIPLSTMv7e{}.pt".format(i)
+        torch.save(LSTM, name)
+        writer.flush()
 
     writer.close()
-
+    return name
 
 class psCLIPLSTM(CLIPLSTM):
     def __init__(self,clip,dropout_p=0.1,max_length=35,teacher_forcing_ratio=0.5,Batch=100):   
@@ -507,16 +508,16 @@ if __name__ == '__main__':
     [resFile, accuracyFile, evalQAFile, evalQuesTypeFile, evalAnsTypeFile] = ['%s/Results/%s%s_%s_%s_%s.json'%(dataDir, versionType, taskType, dataType, dataSubType, \
     fileType) for fileType in fileTypes]  
 
-    vqa=VQA(question_file= quesFile)
-    #vqa=VQA(annotation_file=None,question_file= quesFile)
+    #vqa=VQA(question_file= quesFile)
+    vqa=VQA(annotation_file=annFile,question_file= quesFile)
     
     modelDir="./data/models/"
-    model.load_state_dict(torch.load(os.path.join(modelDir,"modelVitUpdatingContrastive2epoch59.pt")))
+    model.load_state_dict(torch.load(os.path.join(modelDir,"modelVitUpdatingContrastive2epoch99.pt")))
     model.cuda()
 
     #data=myVQALoader(vqa, model, tokenizer, preprocess)
     torch.autograd.set_detect_anomaly(True)
-    Batchsize=140
+    Batchsize=120
     tokenizer= SimpleTokenizer()
     writer = SummaryWriter('runs/LSTM_experiment_1')
     LSTM= psCLIPLSTM(model).float().cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
@@ -525,7 +526,8 @@ if __name__ == '__main__':
     #LSTM.apply(patch_device)
     #patch_device(LSTM)
     #patch_device(model)
-    training=True
+    name='./data/models/CLOZELSTMs/CLIPLSTMv7e19.pt'
+    training=False
     if training: 
         data=myVQALSTM(VQA(annotation_file=annFile,question_file= quesFile), model, tokenizer, preprocess)
         dataloader=torch.utils.data.DataLoader(data,
@@ -536,42 +538,60 @@ if __name__ == '__main__':
                                             drop_last=False,
                                             pin_memory=True,
                                 )
-        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.0001,eps= 1e-3)
-        train(LSTM,dataloader, 100,optimizer) 
-        torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv6e7.pt")
+        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.00003,eps= 1e-3)
+        name=train(LSTM,dataloader, 100,optimizer) 
+        #torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv6e7.pt")
+    LSTM=torch.load(name).eval()
+    try:
+        LSTM.teacher_forcing_ratio=0
+    except:
+        pass
+    Resname="train2k14CLIPLSTMRESv7e19.json"
+    createRESFile(LSTM,vqa,Resname)
 
-    device_holder = torch.jit.trace(lambda: torch.ones([]).to(torch.device(device)), example_inputs=[])
-    device_node = [n for n in device_holder.graph.findAllNodes("prim::Constant") if "Device" in repr(n)][-1]
-
-    LSTM.apply(patch_device)
-    patch_device(LSTM.encode_image)
-    patch_device(LSTM.encode_text)
-
-    # patch dtype to float32 on CPU
-    if device == "cpu":
-        float_holder = torch.jit.trace(lambda: torch.ones([]).float(), example_inputs=[])
-        float_input = list(float_holder.graph.findNode("aten::to").inputs())[1]
-        float_node = float_input.node()
-
-        def patch_float(module):
-            graphs = [module.graph] if hasattr(module, "graph") else []
-            if hasattr(module, "forward1"):
-                graphs.append(module.forward1.graph)
-
-            for graph in graphs:
-                for node in graph.findAllNodes("aten::to"):
-                    inputs = list(node.inputs())
-                    for i in [1, 2]:  # dtype can be the second or third argument to aten::to()
-                        if inputs[i].node()["value"] == 5:
-                            inputs[i].node().copyAttributes(float_node)
-        model.apply(patch_float)
-        patch_float(model.encode_image)
-        patch_float(model.encode_text)
+    with open(Resname) as f:
+                #print(lis)
+        word_pattern = re.compile('<\|endoftext\|>')
+        new=list({"question_id":int(key), "answer":word_pattern.sub("",val)} for k in list(json.loads(f.read())) for key, val in k.items())
+        
 
 
+        json.dump(new,  open(Resname,  'w'))
+    EvaluateResFile(annFile,quesFile,Resname)
+    #createRESFile(LSTM,vqa,"testCLIPLSTMRESv5e6.json")
 
-    LSTM.teacher_forcing_ratio=0
-    createRESFile(LSTM,vqa,"testCLIPLSTMRESv5e6.json")
+
+    # device_holder = torch.jit.trace(lambda: torch.ones([]).to(torch.device(device)), example_inputs=[])
+    # device_node = [n for n in device_holder.graph.findAllNodes("prim::Constant") if "Device" in repr(n)][-1]
+
+    # LSTM.apply(patch_device)
+    # #patch_device(LSTM.encode_image)
+    # #patch_device(LSTM.encode_text)
+
+    # # patch dtype to float32 on CPU
+    # if device == "cpu":
+    #     float_holder = torch.jit.trace(lambda: torch.ones([]).float(), example_inputs=[])
+    #     float_input = list(float_holder.graph.findNode("aten::to").inputs())[1]
+    #     float_node = float_input.node()
+
+    #     def patch_float(module):
+    #         graphs = [module.graph] if hasattr(module, "graph") else []
+    #         if hasattr(module, "forward1"):
+    #             graphs.append(module.forward1.graph)
+
+    #         for graph in graphs:
+    #             for node in graph.findAllNodes("aten::to"):
+    #                 inputs = list(node.inputs())
+    #                 for i in [1, 2]:  # dtype can be the second or third argument to aten::to()
+    #                     if inputs[i].node()["value"] == 5:
+    #                         inputs[i].node().copyAttributes(float_node)
+    #     model.apply(patch_float)
+    #     patch_float(model.encode_image)
+    #     patch_float(model.encode_text)
+
+
+
+    # LSTM.teacher_forcing_ratio=0
 
 
     # data=myVQALSTM(vqa, model, tokenizer, preprocess,train=False)
