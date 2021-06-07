@@ -38,15 +38,15 @@ import torch.nn as nn
 import torch
 from torch import optim
 
-def patch_device(module):
-    graphs = [module.graph] if hasattr(module, "graph") else []
-    if hasattr(module, "forward1"):
-        graphs.append(module.forward1.graph)
+# def patch_device(module):
+#     graphs = [module.graph] if hasattr(module, "graph") else []
+#     if hasattr(module, "forward1"):
+#         graphs.append(module.forward1.graph)
 
-    for graph in graphs:
-        for node in graph.findAllNodes("prim::Constant"):
-            if "value" in node.attributeNames() and str(node["value"]).startswith("cuda"):
-                node.copyAttributes(device_node)
+#     for graph in graphs:
+#         for node in graph.findAllNodes("prim::Constant"):
+#             if "value" in node.attributeNames() and str(node["value"]).startswith("cuda"):
+#                 node.copyAttributes(device_node)
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -70,8 +70,8 @@ class myVQALoader():
             self.qids=[int(qid) for qid in vqa.qqa.keys()] #vqa.getQuesIds()
             self.candidateslist={}
             self.lookup=dict((i,j) for i,j in enumerate(self.dicts))
-            self.candidateslist={ann['question_id']:list(set(ans["answer"] for ans in ann['answers'])) for ann in anns}
-            for ann in anns:
+            self.candidateslist={ann['question_id']:list(set(ans["answer"] for ans in ann['answers'])) for ann in vqa.qqa}
+            for ann in vqa.qqa:
                 quesId = ann['question_id']
                 print( "Question: %s" %(self.qqa[quesId]['question']))
                 print(list(set(ans["answer"] for ans in ann['answers'])))   
@@ -121,7 +121,7 @@ def createdict(i,similarity=[],qids=[],data=[],tokenizer=SimpleTokenizer()):
 def CreateResFileFromModelpt(resFile,data,model):
     '''Given Resfile location, save there the best MCQA from data and model'''
     res=[]
-    Batchsize=2000
+    Batchsize=600
     dataloader=torch.utils.data.DataLoader(data,
                                           batch_size=Batchsize, 
                                           num_workers=10,
@@ -215,39 +215,39 @@ def createdict(i,I=[],QID=[],tokenizer=[]):
     return {QID[i].item():tokenizer.decode(torch.abs(I.T[i])[torch.nonzero(I.T[i],as_tuple=True)].long().tolist())}
 #part=partial(createdict, I=I.cpu(),QID=QID.cpu(),tokenizer=tokenizer)
 
-def createRESFile(LSTM,VQA,resLocation):
-    results=[]
-    Batchsize=900
-    data=myVQALSTM(VQA, model, tokenizer, preprocess,train=False)
-    dataloader=torch.utils.data.DataLoader(data,
-                                          batch_size=Batchsize, 
-                                          num_workers=8,
-                                          shuffle=True,
-                                          prefetch_factor=2,
-                                          drop_last=False,
-                                          pin_memory=True,
-                               )
-    data=tqdm(dataloader)
-    with torch.no_grad():
-        for images,Q,_,_,QID in data:
-            image_input=images.cuda()
-            Q=Q.cuda()#to(device,non_blocking=True)#Bx77
-            _,startindexes=torch.max(Q==0,dim=1)#B
-            startindexes[startindexes<=0]=0
-            outputs=LSTM(image_input,Q.T)#,torch.zeros(Q.T.size()))#.permute(1,0,2)#[77, B, 49408]) to B,77,V
-            #make_dot(LSTM(image_input,Q.T,torch.zeros(Q.T.size())), params=dict(list(LSTM.named_parameters())),  show_attrs=True, show_saved=True)
-            #del Q,image_input
-            _,I=torch.max(outputs,dim=-1)
-            part=partial(createdict, I=I.cpu(),QID=QID.cpu(),tokenizer=tokenizer)
-            with Pool(20) as P:
-                lis=P.map(part,range(startindexes.size(0)))
-            results.extend(lis)
-            del I,outputs,lis
-    json.dump(results,  open(resLocation,  'w'))
+# def createRESFile(LSTM,VQA,resLocation):
+#     results=[]
+#     Batchsize=300 #900 on 3090
+#     data=myVQALSTM(VQA, model, tokenizer, preprocess,train=False)
+#     dataloader=torch.utils.data.DataLoader(data,
+#                                           batch_size=Batchsize, 
+#                                           num_workers=8,
+#                                           shuffle=True,
+#                                           prefetch_factor=2,
+#                                           drop_last=False,
+#                                           pin_memory=True,
+#                                )
+#     data=tqdm(dataloader)
+#     with torch.no_grad():
+#         for images,Q,_,_,QID in data:
+#             image_input=images.cuda()
+#             Q=Q.cuda()#to(device,non_blocking=True)#Bx77
+#             _,startindexes=torch.max(Q==0,dim=1)#B
+#             startindexes[startindexes<=0]=0
+#             outputs=LSTM(image_input,Q.T)#,torch.zeros(Q.T.size()))#.permute(1,0,2)#[77, B, 49408]) to B,77,V
+#             #make_dot(LSTM(image_input,Q.T,torch.zeros(Q.T.size())), params=dict(list(LSTM.named_parameters())),  show_attrs=True, show_saved=True)
+#             #del Q,image_input
+#             _,I=torch.max(outputs,dim=-1)
+#             part=partial(createdict, I=I.cpu(),QID=QID.cpu(),tokenizer=tokenizer)
+#             with Pool(20) as P:
+#                 lis=P.map(part,range(startindexes.size(0)))
+#             results.extend(lis)
+#             del I,outputs,lis
+#     json.dump(results,  open(resLocation,  'w'))
 
 if __name__ == '__main__':
-        
-    model, preprocess = CLIP.load("ViT-B/32", device=device, jit=True)
+
+    model, preprocess = CLIP.clip.load("ViT-B/32", device=device, jit=True)
     input_resolution = model.input_resolution.item()
     context_length = model.context_length.item()
     vocab_size = model.vocab_size.item()
@@ -257,7 +257,7 @@ if __name__ == '__main__':
     print("Vocab size:", vocab_size)
 
     #print("Failed JitLoad")
-    model, _ = CLIP.load("ViT-B/32", device=device, jit=False)
+    model, _ = CLIP.clip.load("ViT-B/32", device=device, jit=False)
 
     # %ls
     # +
