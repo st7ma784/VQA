@@ -33,7 +33,7 @@ from multiprocessing import Pool
 from functools import partial
 from VQA.PythonHelperTools.vqaTools.vqa import *
 from VQA.PythonEvaluationTools.vqaEvaluation.vqaEval import *
-
+import difflib
 import random
 import torch.nn as nn
 import torch
@@ -316,19 +316,23 @@ class myVQALSTM():
             preprocess,
             train=True
     ):
-            self.model=model
-            self.tokenizer=tokenizer
-            self.preprocess=preprocess
-            self.vqa=vqa
-            self.qids=[qid for qid in vqa.qqa.keys()]#[qid['question_id'] for qid in vqa.questions['questions']] #vqa.getQuesIds()
-            self.candidateslist={}
-            if train:
-                for qid in self.qids:
-                    #print(self.vqa.qa[qid])
-                    ans=list(ans["answer"] for ans in self.vqa.qa[qid]['answers'])
-                    self.candidateslist.update({qid:max(set(ans),key=ans.count)})
-            self.train=train
-            print("dataset len  {}".format(len(self)))
+        self.model=model
+        self.tokenizer=tokenizer
+        self.preprocess=preprocess
+        self.vqa=vqa
+        self.qids=[qid for qid in vqa.qqa.keys()]#[qid['question_id'] for qid in vqa.questions['questions']] #vqa.getQuesIds()
+        self.candidateslist={}
+
+        if train:
+            for qid in self.qids:
+                #print(self.vqa.qa[qid])
+                ans=list(ans["answer"] for ans in self.vqa.qa[qid]['answers'])
+                self.candidateslist.update({qid:max(set(ans),key=ans.count)})
+        self.train=train
+        print("dataset len  {}".format(len(self)))
+
+           
+
     def __len__(self):
         return len(self.qids)
     def loadIMG(self,imgFilename):
@@ -366,7 +370,23 @@ class myVQALSTM():
         Q,QA,A=self.loadTextTensors(qid)
         #self.candidateslist.update({qid:candidates})
         return im,Q,QA,A,qid
+    def getWeights(self,filename="./clozeGeneration/mscoco_question_types.txt"):
+        print("Reading in QTypes for sampling")
+        QTYPE={}
+        qidtypelookup={}
+        with open(filename,"r") as QT:
+            for line in QT.readlines():
+                #print(line)
+                QTYPE.update({line[:-1]:0})
+        for i in range(len(self.qids)):
+            qid=self.qids[i]
+            qtype=difflib.get_close_matches(self.vqa.qqa[qid]['question'], QTYPE.keys(), n=1, cutoff=0)
+            QTYPE[qtype[0]]+=1
+            qidtypelookup.update({qid:qtype[0]})
 
+            #self.QTypes= {qtype:count } 
+        questions=[1/QTYPE[qidtypelookup[qid]] for qid in self.qids]
+        return questions
 
 def createdict(i,I=[],QID=[],tokenizer=[]):
     
@@ -422,7 +442,7 @@ def train(LSTM,data_loader,n_iters,optim,writer=SummaryWriter()):
             # _,startindexes=torch.max(Q==0,dim=1)#B
             # startindexes[startindexes<=0]=0
             #writer.add_graph(LSTM.cuda(), (image_input.cuda(),Q.T.cuda()))
-            output=LSTM(image_input,Q.T)#.permute(1,0,2)#[77, B, 49408]) to B,77,V
+            output=LSTM(image_input,Q.T,QA.T.cuda())#.permute(1,0,2)#[77, B, 49408]) to B,77,V
             # print(output.size())
             # print(GTAnswers.size())
             # for j in range(startindexes.size(0)):
@@ -512,33 +532,39 @@ if __name__ == '__main__':
     vqa=VQA(annotation_file=annFile,question_file= quesFile)
     
     modelDir="./data/models/"
-    model.load_state_dict(torch.load(os.path.join(modelDir,"modelVitUpdatingContrastive2epoch99.pt")))
-    model.cuda()
+    #model.load_state_dict(torch.load(os.path.join(modelDir,"modelVitUpdatingContrastive2epoch99.pt")))
+    model.cuda().eval()
 
     #data=myVQALoader(vqa, model, tokenizer, preprocess)
     torch.autograd.set_detect_anomaly(True)
-    Batchsize=120
+    Batchsize=30
     tokenizer= SimpleTokenizer()
-    writer = SummaryWriter('runs/LSTM_experiment_1')
-    LSTM= psCLIPLSTM(model).float().cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
+    writer = SummaryWriter('./runs/LSTM_experiment_3')
+    LSTM= CLIPLSTM(model).cuda() #torch.load('./data/models/CLOZELSTMs/CLIPLSTMv5e6.pt')
     LSTM.device=device
+    print("Ready")
     #model.apply(patch_device)
     #LSTM.apply(patch_device)
     #patch_device(LSTM)
     #patch_device(model)
-    name='./data/models/CLOZELSTMs/CLIPLSTMv7e19.pt'
-    training=False
+    name='./data/models/CLOZELSTMs/CLIPLSTMv9e19.pt'
+    training=True 
     if training: 
-        data=myVQALSTM(VQA(annotation_file=annFile,question_file= quesFile), model, tokenizer, preprocess)
+        print("Beginning training")
+        #VQA(annotation_file=annFile,question_file= quesFile)
+        data=myVQALSTM(vqa, model, tokenizer, preprocess)
+        print("CReaating Q weights") 
+        weights=data.getWeights()
+        sampler=torch.utils.data.WeightedRandomSampler(weights, len(data))
         dataloader=torch.utils.data.DataLoader(data,
                                             batch_size=Batchsize, 
-                                            num_workers=6,
-                                            shuffle=True,
-                                            prefetch_factor=2,
+                                            num_workers=4,
+                                            sampler=sampler,
+                                            prefetch_factor=3,
                                             drop_last=False,
                                             pin_memory=True,
                                 )
-        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.00003,eps= 1e-3)
+        optimizer=torch.optim.AdamW([p for p in LSTM.parameters() if p.requires_grad], lr=0.00001,eps= 1e-3)
         name=train(LSTM,dataloader, 100,optimizer) 
         #torch.save(LSTM, "./data/models/CLOZELSTMs/CLIPLSTMv6e7.pt")
     LSTM=torch.load(name).eval()
